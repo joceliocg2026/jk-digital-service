@@ -1,38 +1,40 @@
-const httpProxy = require('http-proxy');
-
-// Criamos o proxy fora do handler para estabilidade
-const proxy = httpProxy.createProxyServer({
-    target: 'https://137.131.143.111:443',
-    changeOrigin: true,
-    secure: false, 
-    ws: true
-});
-
-// Intercetador para transformar 400 em 404 (Camuflagem solicitada)
-proxy.on('proxyRes', function (proxyRes, req, res) {
-    if (proxyRes.statusCode === 400) {
-        proxyRes.statusCode = 404;
-    }
-});
+const https = require('https');
 
 export default function handler(req, res) {
-    // AJUSTE PARA O TEU XRAY: 
-    // O teu config.json espera o host "relay-c1612a.orgod.shop" internamente
-    req.headers['host'] = 'relay-c1612a.orgod.shop';
+    // Configurações extraídas do seu JSON
+    const options = {
+        hostname: '137.131.143.111',
+        port: 443,
+        path: req.url,
+        method: req.method,
+        headers: {
+            ...req.headers,
+            // O Host interno que o seu Xray espera (do seu JSON anterior)
+            'host': 'relay-c1612a.orgod.shop'
+        },
+        rejectUnauthorized: false, // Permite SSL mesmo com erro na VPS
+        agent: false
+    };
 
-    // Executa o redirecionamento
-    proxy.web(req, res, (err) => {
-        if (err) {
-            // Caso a VPS não responda, mostra o 404 de Nginx
-            res.setHeader('Content-Type', 'text/html');
-            res.status(404).send('<html><head><title>404 Not Found</title></head><body><center><h1>404 Not Found</h1></center><hr><center>nginx</center></body></html>');
-        }
+    const proxyReq = https.request(options, (proxyRes) => {
+        // Repassa exatamente o que a VPS responder (isso vai trazer o 400)
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res, { end: true });
     });
+
+    proxyReq.on('error', (err) => {
+        // Se a VPS não responder, mostra erro 502
+        res.status(502).send('VPS_OFFLINE_OU_FIREWALL');
+    });
+
+    // Envia o corpo da requisição (essencial para gerar dados no xHTTP)
+    req.pipe(proxyReq, { end: true });
 }
 
 export const config = {
     api: {
-        bodyParser: false, // Vital para tráfego xHTTP/VLESS não corromper
+        // Mantemos false para não corromper os pacotes de dados
+        bodyParser: false,
         externalResolver: true,
     },
 };

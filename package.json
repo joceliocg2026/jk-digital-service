@@ -1,7 +1,10 @@
 {
-  "name": "jk-relay-404-method",
+  "name": "jk-relay-fix",
   "version": "1.0.0",
   "private": true,
+  "dependencies": {
+    "http-proxy": "^1.18.1"
+  },
   "engines": {
     "node": "20.x"
   }

@@ -2,27 +2,28 @@ export const config = {
   runtime: "edge",
 };
 
-// Vamos usar o IP direto para evitar problemas de DNS, 
-// e vamos tentar a conexão sem forçar o SSL da Vercel
-const TARGET_IP = "137.131.143.111";
-const TARGET_PORT = "443";
+// Usamos o domínio em vez do IP para a Vercel aceitar a conexão
+const TARGET_DOMAIN = "jkvercel.jkinfinitenet.com";
+const TARGET_URL = `https://${TARGET_DOMAIN}:443`;
 
 export default async function handler(req) {
   const url = new URL(req.url);
 
   try {
-    // Tenta conectar via HTTP para ignorar o erro de Handshake SSL
-    // Já que seu config.json está com security: none
-    const destination = `http://${TARGET_IP}:${TARGET_PORT}${url.pathname}${url.search}`;
+    const destination = TARGET_URL + url.pathname + url.search;
     
     const newHeaders = new Headers(req.headers);
-    newHeaders.set("Host", TARGET_IP);
     
-    // Limpeza de segurança da Vercel
+    // O Host deve ser o seu domínio da VPS
+    newHeaders.set("Host", TARGET_DOMAIN);
+    
+    // Remove headers de proteção da Vercel para liberar o tráfego
     newHeaders.delete("x-vercel-id");
     newHeaders.delete("x-vercel-proxy-signature");
+    newHeaders.delete("x-vercel-protection-bypass");
     newHeaders.delete("connection");
 
+    // Executa o fetch com streaming (duplex: half)
     const response = await fetch(destination, {
       method: req.method,
       headers: newHeaders,
@@ -31,19 +32,11 @@ export default async function handler(req) {
       duplex: "half", 
     });
 
+    // Retorna a resposta. No navegador deve aparecer "400 Bad Request"
     return response;
 
   } catch (error) {
-    // Se falhar, tentamos via HTTPS mas sem validar (fallback)
-    try {
-      return await fetch(`https://${TARGET_IP}:${TARGET_PORT}${url.pathname}${url.search}`, {
-        method: req.method,
-        headers: req.headers,
-        body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
-        duplex: "half"
-      });
-    } catch (e) {
-      return new Response("ERRO_AO_CONECTAR_VPS", { status: 502 });
-    }
+    // Se der erro aqui, tente mudar o TARGET_URL para http (se o Xray permitir)
+    return new Response("ERRO_AO_CONECTAR_VPS: Verifique se o domínio está apontando para o IP correto", { status: 502 });
   }
 }

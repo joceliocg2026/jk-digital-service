@@ -1,32 +1,38 @@
-const https = require('https');
+const httpProxy = require('http-proxy');
+
+// Criamos o proxy fora do handler para estabilidade
+const proxy = httpProxy.createProxyServer({
+    target: 'https://137.131.143.111:443',
+    changeOrigin: true,
+    secure: false, 
+    ws: true
+});
+
+// Intercetador para transformar 400 em 404 (Camuflagem solicitada)
+proxy.on('proxyRes', function (proxyRes, req, res) {
+    if (proxyRes.statusCode === 400) {
+        proxyRes.statusCode = 404;
+    }
+});
 
 export default function handler(req, res) {
-  const options = {
-    hostname: '137.131.143.111',
-    port: 443,
-    path: req.url,
-    method: req.method,
-    headers: {
-      ...req.headers,
-      host: '137.131.143.111', // Força o host para o IP da sua VPS
-    },
-    rejectUnauthorized: false, // Ignora erro de SSL
-  };
+    // AJUSTE PARA O TEU XRAY: 
+    // O teu config.json espera o host "relay-c1612a.orgod.shop" internamente
+    req.headers['host'] = 'relay-c1612a.orgod.shop';
 
-  const proxyReq = https.request(options, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
-    proxyRes.pipe(res, { end: true });
-  });
-
-  proxyReq.on('error', (err) => {
-    res.status(500).send('VPS Inalcançável');
-  });
-
-  req.pipe(proxyReq, { end: true });
+    // Executa o redirecionamento
+    proxy.web(req, res, (err) => {
+        if (err) {
+            // Caso a VPS não responda, mostra o 404 de Nginx
+            res.setHeader('Content-Type', 'text/html');
+            res.status(404).send('<html><head><title>404 Not Found</title></head><body><center><h1>404 Not Found</h1></center><hr><center>nginx</center></body></html>');
+        }
+    });
 }
 
 export const config = {
-  api: {
-    bodyParser: false, // Necessário para não corromper o tráfego xHTTP
-  },
+    api: {
+        bodyParser: false, // Vital para tráfego xHTTP/VLESS não corromper
+        externalResolver: true,
+    },
 };

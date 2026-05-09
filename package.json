@@ -1,10 +1,7 @@
 {
-  "name": "jk-relay-custom-domain",
+  "name": "jk-relay-force-400-v2",
   "version": "1.0.0",
   "private": true,
-  "dependencies": {
-    "http-proxy": "^1.18.1"
-  },
   "engines": {
     "node": "20.x"
   }

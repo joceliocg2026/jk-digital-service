@@ -1,38 +1,32 @@
-javascript
-export const config = {
-  runtime: "edge",
-};
+const https = require('https');
 
-const TARGET_DOMAIN = "jkvercel.jkinfinitenet.com";
+export default function handler(req, res) {
+  const options = {
+    hostname: '137.131.143.111',
+    port: 443,
+    path: req.url,
+    method: req.method,
+    headers: {
+      ...req.headers,
+      host: '137.131.143.111', // Força o host para o IP da sua VPS
+    },
+    rejectUnauthorized: false, // Ignora erro de SSL
+  };
 
-export default async function handler(req) {
-  const url = new URL(req.url);
-  
-  // Forçamos HTTPS para matar o erro "Client sent HTTP to HTTPS"
-  const destination = `https://${TARGET_DOMAIN}:443${url.pathname}${url.search}`;
+  const proxyReq = https.request(options, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res, { end: true });
+  });
 
-  try {
-    const newHeaders = new Headers(req.headers);
-    newHeaders.set("Host", TARGET_DOMAIN);
-    
-    // Limpeza de headers para o protocolo XHTTP passar sem travas
-    newHeaders.delete("x-vercel-id");
-    newHeaders.delete("x-vercel-proxy-signature");
-    newHeaders.delete("connection");
+  proxyReq.on('error', (err) => {
+    res.status(500).send('VPS Inalcançável');
+  });
 
-    const response = await fetch(destination, {
-      method: req.method,
-      headers: newHeaders,
-      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
-      redirect: "manual",
-      duplex: "half",
-    });
-
-    // Aqui deve aparecer o 400 Bad Request no navegador
-    return response;
-
-  } catch (error) {
-    // Se der erro de Handshake, tentamos uma rota alternativa
-    return new Response("ERRO_DE_HANDSHAKE: Verifique se o SSL na VPS está ativo", { status: 502 });
-  }
+  req.pipe(proxyReq, { end: true });
 }
+
+export const config = {
+  api: {
+    bodyParser: false, // Necessário para não corromper o tráfego xHTTP
+  },
+};

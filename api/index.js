@@ -2,15 +2,15 @@ export const config = {
   runtime: "edge",
 };
 
-// Usando o domínio em vez do IP para evitar o erro "Direct IP access is not allowed"
+// Agora usamos HTTPS pois o seu servidor VPS está exigindo (Porta 443 com SSL)
 const TARGET_DOMAIN = "jkvercel.jkinfinitenet.com";
 const TARGET_PORT = "443";
 
 export default async function handler(req) {
   try {
     const url = new URL(req.url);
-    // Monta a URL de destino usando o domínio
-    const destination = `http://${TARGET_DOMAIN}:${TARGET_PORT}${url.pathname}${url.search}`;
+    // Mudamos para https:// para resolver o erro de "HTTP request to HTTPS server"
+    const destination = `https://${TARGET_DOMAIN}:${TARGET_PORT}${url.pathname}${url.search}`;
 
     const newHeaders = new Headers(req.headers);
     
@@ -32,11 +32,10 @@ export default async function handler(req) {
       duplex: "half", 
     });
 
-    // Retorna a resposta bruta (Deve dar Erro 400 no navegador)
+    // Retorna a resposta bruta (Deve dar o Erro 400 ou resposta do Xray agora)
     return response;
 
   } catch (error) {
-    // Se der 502, verifique se a porta 443 está aberta no Firewall da VPS
-    return new Response("ERRO_LIGACAO_DOMINIO", { status: 502 });
+    return new Response("ERRO_LIGACAO_SSL_VPS", { status: 502 });
   }
 }

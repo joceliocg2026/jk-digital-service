@@ -2,42 +2,48 @@ export const config = {
   runtime: "edge",
 };
 
-// Vamos usar o domínio para evitar o erro de "Direct IP"
 const TARGET_DOMAIN = "jkvercel.jkinfinitenet.com";
 const TARGET_PORT = "443";
 
 export default async function handler(req) {
   const url = new URL(req.url);
+  const path = url.pathname + url.search;
+
+  const headers = new Headers(req.headers);
+  headers.set("Host", TARGET_DOMAIN);
+  
+  // Limpeza de segurança para evitar 403
+  headers.delete("x-vercel-id");
+  headers.delete("x-vercel-proxy-signature");
+  headers.delete("x-vercel-protection-bypass");
+  headers.delete("connection");
+
+  const fetchOptions = {
+    method: req.method,
+    headers: headers,
+    body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+    redirect: "manual",
+    duplex: "half",
+  };
 
   try {
-    // Forçamos HTTPS para resolver o erro "Client sent HTTP to HTTPS"
-    const destination = `https://${TARGET_DOMAIN}:${TARGET_PORT}${url.pathname}${url.search}`;
-    
-    const newHeaders = new Headers(req.headers);
-    
-    // O Host deve ser o domínio para validar o SSL da VPS
-    newHeaders.set("Host", TARGET_DOMAIN);
-    
-    // Removemos os filtros da Vercel que causam o 403
-    newHeaders.delete("x-vercel-id");
-    newHeaders.delete("x-vercel-proxy-signature");
-    newHeaders.delete("x-vercel-protection-bypass");
-    newHeaders.delete("connection");
-
-    // O segredo para protocolos VPN: duplex "half" e não seguir redirecionamentos
-    const response = await fetch(destination, {
-      method: req.method,
-      headers: newHeaders,
-      body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
-      redirect: "manual",
-      duplex: "half", 
-    });
-
-    // Se aparecer "400 Bad Request" no navegador, seu app vai conectar na hora!
-    return response;
-
-  } catch (error) {
-    // Se der erro de SSL aqui, significa que o certificado da VPS expirou ou é inválido
-    return new Response("ERRO_HANDSHAKE_OU_SSL: Verifique o certificado na VPS", { status: 502 });
+    // TENTATIVA 1: HTTPS (O que estava dando erro de Handshake)
+    return await fetch(`https://${TARGET_DOMAIN}:${TARGET_PORT}${path}`, fetchOptions);
+  } catch (sslError) {
+    try {
+      // TENTATIVA 2: HTTP na porta 443 (Muitas vezes o Xray aceita se o SSL estiver em modo 'none')
+      return await fetch(`http://${TARGET_DOMAIN}:${TARGET_PORT}${path}`, fetchOptions);
+    } catch (httpError) {
+      // TENTATIVA 3: Forçar via IP caso o DNS esteja falhando (Usando Host no header)
+      const TARGET_IP = "137.131.143.111";
+      try {
+        return await fetch(`http://${TARGET_IP}:${TARGET_PORT}${path}`, {
+          ...fetchOptions,
+          headers: { ...Object.fromEntries(headers), Host: TARGET_DOMAIN }
+        });
+      } catch (lastError) {
+        return new Response("ERRO_CRITICO: VPS Recusou todas as tentativas. Verifique se o Xray está rodando na porta 443.", { status: 502 });
+      }
+    }
   }
 }

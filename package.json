@@ -1,8 +1,8 @@
 {
-  "name": "jk-relay-https-fix",
+  "name": "jk-relay-404-method",
   "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": "22.x"
+    "node": "20.x"
   }
 }

@@ -2,7 +2,7 @@ export const config = {
   runtime: "edge",
 };
 
-// Usamos o domínio apontado para o seu IP
+// Vamos usar o domínio para evitar o erro de "Direct IP"
 const TARGET_DOMAIN = "jkvercel.jkinfinitenet.com";
 const TARGET_PORT = "443";
 
@@ -10,22 +10,21 @@ export default async function handler(req) {
   const url = new URL(req.url);
 
   try {
-    // Mudamos para http:// para evitar o erro de Handshake SSL (ERRO_AO_CONECTAR_VPS)
-    // A Vercel aceita falar http com domínios externos no Edge Runtime
-    const destination = `http://${TARGET_DOMAIN}:${TARGET_PORT}${url.pathname}${url.search}`;
+    // Forçamos HTTPS para resolver o erro "Client sent HTTP to HTTPS"
+    const destination = `https://${TARGET_DOMAIN}:${TARGET_PORT}${url.pathname}${url.search}`;
     
     const newHeaders = new Headers(req.headers);
     
-    // O Host deve ser o domínio para o Xray identificar o tráfego
+    // O Host deve ser o domínio para validar o SSL da VPS
     newHeaders.set("Host", TARGET_DOMAIN);
     
-    // Limpeza de headers da Vercel para evitar 403 ou loops
+    // Removemos os filtros da Vercel que causam o 403
     newHeaders.delete("x-vercel-id");
     newHeaders.delete("x-vercel-proxy-signature");
     newHeaders.delete("x-vercel-protection-bypass");
     newHeaders.delete("connection");
 
-    // Executa o fetch com streaming (duplex: half) essencial para xHTTP
+    // O segredo para protocolos VPN: duplex "half" e não seguir redirecionamentos
     const response = await fetch(destination, {
       method: req.method,
       headers: newHeaders,
@@ -34,21 +33,11 @@ export default async function handler(req) {
       duplex: "half", 
     });
 
-    // Se chegar aqui, a conexão foi feita. 
-    // No navegador deve aparecer "400 Bad Request" (Resposta do Xray)
+    // Se aparecer "400 Bad Request" no navegador, seu app vai conectar na hora!
     return response;
 
   } catch (error) {
-    // Fallback caso a VPS exija estritamente HTTPS
-    try {
-      return await fetch(`https://${TARGET_DOMAIN}:${TARGET_PORT}${url.pathname}${url.search}`, {
-        method: req.method,
-        headers: req.headers,
-        body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
-        duplex: "half"
-      });
-    } catch (e) {
-      return new Response("ERRO_CRITICO_VPS: Verifique se a porta 443 está aberta na VPS", { status: 502 });
-    }
+    // Se der erro de SSL aqui, significa que o certificado da VPS expirou ou é inválido
+    return new Response("ERRO_HANDSHAKE_OU_SSL: Verifique o certificado na VPS", { status: 502 });
   }
 }

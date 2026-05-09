@@ -2,28 +2,33 @@ export const config = {
   runtime: "edge",
 };
 
-// Agora usamos HTTPS pois o seu servidor VPS está exigindo (Porta 443 com SSL)
+/**
+ * RELAY JK INFINITE - SOLUÇÃO DEFINITIVA SSL/XHTTP
+ */
+
 const TARGET_DOMAIN = "jkvercel.jkinfinitenet.com";
-const TARGET_PORT = "443";
+const TARGET_URL = `https://${TARGET_DOMAIN}:443`;
 
 export default async function handler(req) {
-  try {
-    const url = new URL(req.url);
-    // Mudamos para https:// para resolver o erro de "HTTP request to HTTPS server"
-    const destination = `https://${TARGET_DOMAIN}:${TARGET_PORT}${url.pathname}${url.search}`;
+  const url = new URL(req.url);
 
+  try {
+    const destination = TARGET_URL + url.pathname + url.search;
+    
+    // Clonamos os headers para não perder as credenciais do XHTTP/VLESS
     const newHeaders = new Headers(req.headers);
     
-    // O Host deve ser o domínio configurado na sua VPS
+    // Ajustes de Host e Segurança
     newHeaders.set("Host", TARGET_DOMAIN);
     
-    // Limpeza de headers para evitar o erro 403 da Vercel
+    // Removemos os headers que fazem a Vercel filtrar a conexão
     newHeaders.delete("x-vercel-id");
     newHeaders.delete("x-vercel-proxy-signature");
     newHeaders.delete("x-vercel-protection-bypass");
     newHeaders.delete("connection");
 
-    // Executa o fetch com streaming habilitado (duplex half)
+    // O fetch no Edge Runtime não permite ignorar SSL explicitamente via flag,
+    // então usamos o redirecionamento manual para tentar o handshake direto.
     const response = await fetch(destination, {
       method: req.method,
       headers: newHeaders,
@@ -32,10 +37,22 @@ export default async function handler(req) {
       duplex: "half", 
     });
 
-    // Retorna a resposta bruta (Deve dar o Erro 400 ou resposta do Xray agora)
+    // Se a VPS responder, repassamos exatamente o que ela disse
+    // (Isso deve gerar o Erro 400 no navegador, que é o que queremos)
     return response;
 
   } catch (error) {
-    return new Response("ERRO_LIGACAO_SSL_VPS", { status: 502 });
+    // Se ainda der erro de SSL, tentamos via HTTP (porta 443 aceita as vezes dependendo do Xray)
+    try {
+      const fallbackUrl = `http://${TARGET_DOMAIN}:443${url.pathname}${url.search}`;
+      return await fetch(fallbackUrl, {
+        method: req.method,
+        headers: req.headers,
+        body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+        duplex: "half"
+      });
+    } catch (e) {
+      return new Response("ERRO_TOTAL_CONEXAO: Verifique o Firewall da VPS", { status: 502 });
+    }
   }
 }

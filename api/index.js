@@ -2,28 +2,27 @@ export const config = {
   runtime: "edge",
 };
 
-// Domínio que aponta para sua VPS
-const TARGET_DOMAIN = "jkvercel.jkinfinitenet.com";
-const TARGET_URL = `https://${TARGET_DOMAIN}:443`;
+// Vamos usar o IP direto para evitar problemas de DNS, 
+// e vamos tentar a conexão sem forçar o SSL da Vercel
+const TARGET_IP = "137.131.143.111";
+const TARGET_PORT = "443";
 
 export default async function handler(req) {
   const url = new URL(req.url);
 
   try {
-    const destination = TARGET_URL + url.pathname + url.search;
+    // Tenta conectar via HTTP para ignorar o erro de Handshake SSL
+    // Já que seu config.json está com security: none
+    const destination = `http://${TARGET_IP}:${TARGET_PORT}${url.pathname}${url.search}`;
     
     const newHeaders = new Headers(req.headers);
+    newHeaders.set("Host", TARGET_IP);
     
-    // O Host deve ser o domínio configurado no certificado da VPS
-    newHeaders.set("Host", TARGET_DOMAIN);
-    
-    // Limpeza total de headers da Vercel para evitar o Erro 403
+    // Limpeza de segurança da Vercel
     newHeaders.delete("x-vercel-id");
     newHeaders.delete("x-vercel-proxy-signature");
-    newHeaders.delete("x-vercel-protection-bypass");
     newHeaders.delete("connection");
 
-    // Fetch com HTTPS e streaming (duplex: half)
     const response = await fetch(destination, {
       method: req.method,
       headers: newHeaders,
@@ -32,12 +31,19 @@ export default async function handler(req) {
       duplex: "half", 
     });
 
-    // Retorna a resposta bruta. 
-    // No navegador, deve aparecer "400 Bad Request" (Sucesso de conexão)
     return response;
 
   } catch (error) {
-    // Se der esse erro, a Vercel não confia no certificado SSL da VPS
-    return new Response("ERRO_HANDSHAKE_SSL", { status: 502 });
+    // Se falhar, tentamos via HTTPS mas sem validar (fallback)
+    try {
+      return await fetch(`https://${TARGET_IP}:${TARGET_PORT}${url.pathname}${url.search}`, {
+        method: req.method,
+        headers: req.headers,
+        body: req.method !== "GET" && req.method !== "HEAD" ? req.body : undefined,
+        duplex: "half"
+      });
+    } catch (e) {
+      return new Response("ERRO_AO_CONECTAR_VPS", { status: 502 });
+    }
   }
 }
